@@ -3,6 +3,8 @@ import asyncio
 import logging
 import random
 import sqlite3
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -280,10 +282,34 @@ async def ticketlog_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Нажми /start, чтобы открыть меню.")
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in ("/", "/health"):
+            body = b"ChikiDrop bot is running"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_error(404)
+
+    def log_message(self, format, *args):
+        return
+
+def start_health_server():
+    port = int(os.environ.get("PORT", "10000"))
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    log.info("Health server listening on port %s", port)
+    return server
+
 def main():
     if not TOKEN: raise SystemExit("Задай переменную BOT_TOKEN.")
     if not ADMIN_IDS: raise SystemExit("Задай ADMIN_IDS — Telegram ID администратора.")
     init_db()
+    start_health_server()
     app = Application.builder().token(TOKEN).build()
     for command, handler in [
         ("start", start), ("help", help_cmd), ("id", id_cmd),
